@@ -5,10 +5,10 @@ bl_info = {
     "name": "UV Shape",
     "author": "Rich Colburn, email: the3dadvantage@gmail.com",
     "version": (1, 0),
-    "blender": (2, 78, 0),
+    "blender": (2, 80, 0),
     "location": "View3D > Extended Tools > Create UV Shape",
     "description": "Creates a flattened version of the mesh as a shape key",
-    "warning": "Experimental: Everyone who has ever died did so while alive",
+    "warning": "Life is a vapor of smoke. Eternity lasts forever.",
     "wiki_url": "",
     "category": '3D View'}
 
@@ -240,15 +240,15 @@ def uv_to_shape_key(ob='empty', uv_layer='UV_Shape_key', adjust=False):
         basic_unwrap()
 
     uv = ob.data.uv_layers
-    bpy.context.scene.update()
+    bpy.context.evaluated_depsgraph_get()
     if len(uv) > 0:
         if bpy.context.scene.use_active_uv_for_shape:
             idx = uv.active_index
             uv_layer = uv[idx].name
         if ob.data.shape_keys == None:
-            ob.shape_key_add('Basis')    
+            ob.shape_key_add(name='Basis')    
         if 'UV_Shape_key' not in ob.data.shape_keys.key_blocks:
-            ob.shape_key_add('UV_Shape_key')
+            ob.shape_key_add(name='UV_Shape_key')
         uv_co = get_uv_coords(ob, uv_layer, proxy=False)
         uv_list = []
         face_verts = dict['v_in_faces']
@@ -333,9 +333,11 @@ def relative_scale(ob='empty'):
     ob.scale = np.tile(1, 3)
     ob.scale = np.tile(ob.relative_scale, 3)
     set_coords(coords / ob.relative_scale, ob)
+
     
 def update_relative(self, context):
     relative_scale()
+
 
 def create_uv_shape():
     uv_to_shape_key()
@@ -385,6 +387,22 @@ def autosplit_geometry():
         bpy.ops.object.mode_set(mode=mode)    
     else:
         return
+
+
+def remove_keys():
+    """Deletes the uv shape keys"""
+    ob=bpy.context.object
+    if ob is None:
+        return
+    for k in ob.data.shape_keys.key_blocks:
+        if k.name.startswith('UV_Shape_key'):
+            ob.shape_key_remove(k)
+
+
+def shape_update(self, context):
+    keys = self.data.shape_keys.key_blocks
+    if "UV_Shape_key" in keys:
+        keys["UV_Shape_key"].value = self.shape_controller
     
 
 class ShapeFromUV(bpy.types.Operator):
@@ -395,6 +413,17 @@ class ShapeFromUV(bpy.types.Operator):
         create_uv_shape()
         return {'FINISHED'}
 
+
+class ShapeRemove(bpy.types.Operator):
+    '''Removes shape keys if their name starts with
+    UV_Shape_key'''
+    bl_idname = "object.uv_shape_key_remove"
+    bl_label = "uv shape key remover"
+    def execute(self, context):
+        remove_keys()
+        return {'FINISHED'}
+
+
 class AutosplitGeometry(bpy.types.Operator):
     '''Takes the active uv map and divides up the geometry'''
     bl_idname = "object.autosplit_geometry"
@@ -403,6 +432,7 @@ class AutosplitGeometry(bpy.types.Operator):
         autosplit_geometry()
         return {'FINISHED'}
 
+
 class UpdateLineLengths(bpy.types.Operator):
     '''Reads current mesh and updates scene properties'''
     bl_idname = "object.update_line_lengths"
@@ -410,6 +440,7 @@ class UpdateLineLengths(bpy.types.Operator):
     def execute(self, context):
         update_line_lengths()
         return {'FINISHED'}
+
 
 def create_properties():
     bpy.types.Scene.base_select_length = bpy.props.FloatProperty(name="Base Select Length", 
@@ -444,6 +475,10 @@ def create_properties():
         description="Rescale islands to match 3d size", 
         default=True)
 
+    bpy.types.Object.shape_controller = bpy.props.FloatProperty(name="Shape Controller", 
+        description="Moves the uv shape to the UI", 
+        default=1.0, precision=2, soft_min=0, soft_max=1, update=shape_update)
+
 
 def remove_properties():
     """It's never a good idea to clean your marble collection while skydiving"""
@@ -454,17 +489,19 @@ def remove_properties():
     del(bpy.types.Scene.shape_base_divisor)
     del(bpy.types.Scene.shape_select_diameter) 
     del(bpy.types.Object.relative_scale)
+    del(bpy.types.Object.shape_controller)
     
 
 class Print3DTools(bpy.types.Panel):
     """Creates a new tab with physics UI"""
     bl_label = "3D Print Tools"
-    bl_idname = "3D Print Tools"
+    bl_idname = "UV_SHAPE_TOOLS_PT_panel"
     bl_space_type = 'VIEW_3D'
-    bl_region_type = 'TOOLS'
+    bl_region_type = 'UI'
     bl_category = "Extended Tools"
     
     def draw(self, context):
+        ob = bpy.context.object
         layout = self.layout
         col = layout.column()
         col.label(text="UV Tools")
@@ -473,14 +510,13 @@ class Print3DTools(bpy.types.Panel):
         col.prop(bpy.context.scene, "use_active_uv_for_shape", text="Use Active Map", icon='GROUP_UVS')
         col.prop(bpy.context.scene, "uv_shape_adjust_scale", text="Rescale Islands", icon='BORDERMOVE')
         
-        #col.operator("object.update_line_lengths", text="Update Measurements", icon='FILE_REFRESH')
-        #col.prop(bpy.context.scene, "base_select_length", text="Base Select Length", icon='FORCE_HARMONIC')                    
-        #col.prop(bpy.context.scene, "shape_select_length", text="Shape Select Length", icon='FORCE_HARMONIC')                    
-        #col.prop(bpy.context.scene, "shape_base_difference", text="Difference", icon='FORCE_HARMONIC')
-        #col.prop(bpy.context.scene, "shape_base_divisor", text="Divisor", icon='FORCE_HARMONIC')
-        #if bpy.context.object != None:
-            #col.prop(bpy.context.object, "relative_scale", text="Relative Scale", icon='FORCE_HARMONIC')                    
-
+        if ob is not None:
+            if ob.data.shape_keys is not None:    
+                keys = ob.data.shape_keys.key_blocks
+                if "UV_Shape_key" in keys:        
+                    col.prop(ob, "shape_controller", text="Shape Control", icon='SHAPEKEY_DATA')        
+                col.operator("object.uv_shape_key_remove", text="Reset", icon='CANCEL')
+        
         
 def register():
     create_properties()
@@ -488,6 +524,8 @@ def register():
     bpy.utils.register_class(ShapeFromUV)
     bpy.utils.register_class(AutosplitGeometry)
     bpy.utils.register_class(UpdateLineLengths)
+    bpy.utils.register_class(ShapeRemove)
+
 
 def unregister():
     remove_properties()
@@ -495,6 +533,7 @@ def unregister():
     bpy.utils.unregister_class(ShapeFromUV)
     bpy.utils.unregister_class(AutosplitGeometry)
     bpy.utils.unregister_class(UpdateLineLengths)
+    bpy.utils.unregister_class(ShapeRemove)
     
 if __name__ == "__main__":
     register()
