@@ -477,7 +477,7 @@ def create_properties():
 
     bpy.types.Object.shape_controller = bpy.props.FloatProperty(name="Shape Controller", 
         description="Moves the uv shape to the UI", 
-        default=1.0, precision=2, soft_min=0, soft_max=1, update=shape_update)
+        default=0.0, precision=2, soft_min=0, soft_max=1, update=shape_update)
 
 
 def remove_properties():
